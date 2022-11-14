@@ -37,6 +37,7 @@ import (
 	"github.com/okteto/okteto/pkg/k8s/diverts"
 	"github.com/okteto/okteto/pkg/k8s/ingresses"
 	"github.com/okteto/okteto/pkg/k8s/kubeconfig"
+	"github.com/okteto/okteto/pkg/k8s/virtualservices"
 	oktetoLog "github.com/okteto/okteto/pkg/log"
 	"github.com/okteto/okteto/pkg/model"
 	"github.com/okteto/okteto/pkg/okteto"
@@ -314,7 +315,9 @@ func (dc *DeployCommand) RunDeploy(ctx context.Context, deployOptions *Options) 
 			return oktetoErrors.ErrDivertNotSupported
 		}
 		if deployOptions.Manifest.Deploy.Divert.Namespace != deployOptions.Manifest.Namespace {
-			dc.Proxy.SetDivert(deployOptions.Manifest.Deploy.Divert.Namespace)
+			if deployOptions.Manifest.Deploy.Divert.Driver == model.OktetoDivertWeaverDriver {
+				dc.Proxy.SetDivert(deployOptions.Manifest.Deploy.Divert.Namespace)
+			}
 		}
 	}
 
@@ -476,7 +479,7 @@ func (dc *DeployCommand) deploy(ctx context.Context, opts *Options) error {
 		oktetoLog.SetStage("")
 	}
 
-	// deploy diver if any
+	// deploy divert if any
 	if opts.Manifest.Deploy.Divert != nil && opts.Manifest.Deploy.Divert.Namespace != opts.Manifest.Namespace {
 		oktetoLog.SetStage("Divert configuration")
 		if err := dc.deployDivert(ctx, opts); err != nil {
@@ -521,7 +524,6 @@ func (dc *DeployCommand) deployStack(ctx context.Context, opts *Options) error {
 }
 
 func (dc *DeployCommand) deployDivert(ctx context.Context, opts *Options) error {
-
 	oktetoLog.Spinner(fmt.Sprintf("Diverting namespace %s...", opts.Manifest.Deploy.Divert.Namespace))
 	oktetoLog.StartSpinner()
 	defer oktetoLog.StopSpinner()
@@ -531,24 +533,66 @@ func (dc *DeployCommand) deployDivert(ctx context.Context, opts *Options) error 
 		return err
 	}
 
-	result, err := c.NetworkingV1().Ingresses(opts.Manifest.Deploy.Divert.Namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
+	switch opts.Manifest.Deploy.Divert.Driver {
+	//TODO: refactor in two functions
+	case model.OktetoDivertWeaverDriver:
+		result, err := c.NetworkingV1().Ingresses(opts.Manifest.Deploy.Divert.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return err
+		}
 
-	for i := range result.Items {
-		select {
-		case <-ctx.Done():
-			oktetoLog.Infof("deployDivert context cancelled")
-			return ctx.Err()
-		default:
-			oktetoLog.Spinner(fmt.Sprintf("Diverting ingress %s/%s...", result.Items[i].Namespace, result.Items[i].Name))
-			if err := diverts.DivertIngress(ctx, opts.Manifest, &result.Items[i], c); err != nil {
-				return err
+		for i := range result.Items {
+			select {
+			case <-ctx.Done():
+				oktetoLog.Infof("deployDivert context cancelled")
+				return ctx.Err()
+			default:
+				oktetoLog.Spinner(fmt.Sprintf("Diverting ingress %s/%s...", result.Items[i].Namespace, result.Items[i].Name))
+				if err := diverts.DivertIngress(ctx, opts.Manifest, &result.Items[i], c); err != nil {
+					return err
+				}
+			}
+		}
+	case model.OktetoDivertIstioDriver:
+		c, err := virtualservices.GetIstioClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		result, err := virtualservices.List(ctx, opts.Manifest.Deploy.Divert.Namespace, c)
+		if err != nil {
+			return err
+		}
+
+		for _, vs := range result {
+			select {
+			case <-ctx.Done():
+				oktetoLog.Infof("deployDivert context cancelled")
+				return ctx.Err()
+			default:
+				if !inVirtualService(vs.Name, opts.Manifest.Deploy.Divert.VirtualServices) {
+					continue
+				}
+				oktetoLog.Spinner(fmt.Sprintf("Diverting virtual service %s/%s ...", opts.Manifest.Deploy.Divert.Namespace, vs.Name))
+				if err := diverts.DivertVirtualService(ctx, opts.Manifest, vs, c); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func inVirtualService(name string, virtualServices []string) bool {
+	for _, vs := range virtualServices {
+		if vs == "*" {
+			return true
+		}
+		if name == vs {
+			return true
+		}
+	}
+	return false
 }
 
 func (dc *DeployCommand) deployEndpoints(ctx context.Context, opts *Options) error {

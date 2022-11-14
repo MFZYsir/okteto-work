@@ -377,6 +377,17 @@ func (dc *destroyCommand) runDestroy(ctx context.Context, opts *Options) error {
 		return err
 	}
 
+	// // deploy divert if any
+	// if manifest.Deploy.Divert != nil && manifest.Deploy.Divert.Namespace != manifest.Namespace {
+	// 	oktetoLog.SetStage("Destroying divert configuration")
+	// 	if err := dc.nsDestroyer.DestroyDivert(ctx, manifest.Deploy.Divert)(ctx, opts); err != nil {
+	// 		oktetoLog.AddToBuffer(oktetoLog.ErrorLevel, "error destroying divert: %s", err.Error())
+	// 		return err
+	// 	}
+	// 	oktetoLog.Success("Divert from '%s' successfully destroyed", manifest.Deploy.Divert.Namespace)
+	// 	oktetoLog.SetStage("")
+	// }
+
 	oktetoLog.SetStage("Destroying configmap")
 
 	if err := dc.configMapHandler.destroyConfigMap(ctx, cfg, namespace); err != nil {
