@@ -19,7 +19,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/okteto/okteto/pkg/k8s/diverts"
 	"github.com/okteto/okteto/pkg/k8s/statefulsets"
+	"github.com/okteto/okteto/pkg/k8s/virtualservices"
 	"github.com/okteto/okteto/pkg/k8s/volumes"
 	oktetoLog "github.com/okteto/okteto/pkg/log"
 	"github.com/okteto/okteto/pkg/model"
@@ -227,6 +229,36 @@ func (n *Namespaces) DestroySFSVolumes(ctx context.Context, ns string, opts Dele
 		}
 	}
 
+	return nil
+}
+
+// UnconfigureDivert This function unconfigures divert from the diverted namespace
+func (n *Namespaces) UnconfigureDivert(ctx context.Context, m *model.Manifest) error {
+	if m.Deploy.Divert.Driver != model.OktetoDivertIstioDriver {
+		return nil
+	}
+	c, err := virtualservices.GetIstioClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	result, err := virtualservices.List(ctx, m.Deploy.Divert.Namespace, c)
+	if err != nil {
+		return err
+	}
+
+	for _, vs := range result {
+		select {
+		case <-ctx.Done():
+			oktetoLog.Infof("destroyDivert context cancelled")
+			return ctx.Err()
+		default:
+			oktetoLog.Spinner(fmt.Sprintf("Destroying Divert un virtual service %s/%s ...", m.Deploy.Divert.Namespace, vs.Name))
+			if err := diverts.UnconfigureDivertVirtualService(ctx, m, vs, c); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

@@ -34,6 +34,11 @@ import (
 )
 
 var fakeManifest *model.Manifest = &model.Manifest{
+	Deploy: &model.DeployInfo{
+		Divert: &model.DivertDeploy{
+			Namespace: "staging",
+		},
+	},
 	Destroy: []model.DeployCommand{
 		{
 			Name:    "printenv",
@@ -51,10 +56,11 @@ var fakeManifest *model.Manifest = &model.Manifest{
 }
 
 type fakeDestroyer struct {
-	destroyed        bool
-	destroyedVolumes bool
-	err              error
-	errOnVolumes     error
+	destroyed              bool
+	destroyedVolumes       bool
+	err                    error
+	errOnVolumes           error
+	errOnUnConfigureDivert error
 }
 
 type fakeSecretHandler struct {
@@ -82,6 +88,14 @@ func (fd *fakeDestroyer) DestroySFSVolumes(_ context.Context, _ string, _ namesp
 	}
 
 	fd.destroyedVolumes = true
+	return nil
+}
+
+func (fd *fakeDestroyer) UnconfigureDivert(_ context.Context, _ *model.Manifest) error {
+	if fd.errOnUnConfigureDivert != nil {
+		return fd.errOnUnConfigureDivert
+	}
+
 	return nil
 }
 
@@ -161,6 +175,45 @@ func TestDestroyWithErrorDeletingVolumes(t *testing.T) {
 	assert.Equal(t, 3, len(executor.executed))
 	assert.False(t, destroyer.destroyed)
 	assert.False(t, destroyer.destroyedVolumes)
+
+	// check if configmap has been created
+	cfg, _ := configmaps.Get(ctx, pipeline.TranslatePipelineName(opts.Name), okteto.Context().Namespace, fakeClient)
+	assert.NotNil(t, cfg)
+}
+
+func TestDestroyWithErrorUnConfiguringDivert(t *testing.T) {
+	ctx := context.Background()
+	executor := &fakeExecutor{}
+	opts := &Options{
+		Name: "test-app",
+	}
+	k8sClientProvider := test.NewFakeK8sProvider()
+	fakeClient, _, err := k8sClientProvider.Provide(api.NewConfig())
+	if err != nil {
+		t.Fatal("could not create fake k8s client")
+	}
+	destroyer := &fakeDestroyer{
+		errOnUnConfigureDivert: assert.AnError,
+	}
+	okteto.CurrentStore = &okteto.OktetoContextStore{
+		Contexts: map[string]*okteto.OktetoContext{
+			"test": {
+				Namespace: "test",
+			},
+		},
+		CurrentContext: "test",
+	}
+	cmd := &destroyCommand{
+		getManifest:       getFakeManifest,
+		nsDestroyer:       destroyer,
+		executor:          executor,
+		k8sClientProvider: k8sClientProvider,
+		configMapHandler:  newConfigmapHandler(fakeClient),
+	}
+
+	err = cmd.runDestroy(ctx, opts)
+
+	assert.Error(t, err)
 
 	// check if configmap has been created
 	cfg, _ := configmaps.Get(ctx, pipeline.TranslatePipelineName(opts.Name), okteto.Context().Namespace, fakeClient)

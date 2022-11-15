@@ -24,8 +24,8 @@ import (
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-// DivertVirtualService divert a virtual service to the developer namespace
-func DivertVirtualService(ctx context.Context, m *model.Manifest, fromVS *istioV1beta1.VirtualService, c *istioclientset.Clientset) error {
+// ConfigureDivertVirtualService divert a virtual service to the developer namespace
+func ConfigureDivertVirtualService(ctx context.Context, m *model.Manifest, fromVS *istioV1beta1.VirtualService, c *istioclientset.Clientset) error {
 	vs, err := virtualservices.Get(ctx, fromVS.Name, m.Namespace, c)
 	if err != nil {
 		if !oktetoErrors.IsNotFound(err) {
@@ -56,16 +56,8 @@ func DivertVirtualService(ctx context.Context, m *model.Manifest, fromVS *istioV
 	return virtualservices.Update(ctx, fromVS, c)
 }
 
-// UndoDivertVirtualService divert a virtual service to the developer namespace
-func UndoDivertVirtualService(ctx context.Context, m *model.Manifest, name string, c *istioclientset.Clientset) error {
-	vs, err := virtualservices.Get(ctx, name, m.Deploy.Divert.Namespace, c)
-	if err != nil {
-		return err
-	}
-
-	if !oktetoErrors.IsNotFound(err) {
-		return err
-	}
+// UnconfigureDivertVirtualService divert a virtual service to the developer namespace
+func UnconfigureDivertVirtualService(ctx context.Context, m *model.Manifest, vs *istioV1beta1.VirtualService, c *istioclientset.Clientset) error {
 	vs = translateVirtualService(m, vs, false)
 	if err := virtualservices.Update(ctx, vs, c); err != nil {
 		return err

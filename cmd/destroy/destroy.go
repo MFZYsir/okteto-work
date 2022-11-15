@@ -58,6 +58,7 @@ const (
 type destroyer interface {
 	DestroyWithLabel(ctx context.Context, ns string, opts namespaces.DeleteAllOptions) error
 	DestroySFSVolumes(ctx context.Context, ns string, opts namespaces.DeleteAllOptions) error
+	UnconfigureDivert(ctx context.Context, m *model.Manifest) error
 }
 
 type secretHandler interface {
@@ -289,6 +290,16 @@ func (dc *destroyCommand) runDestroy(ctx context.Context, opts *Options) error {
 	signal.Notify(stop, os.Interrupt)
 	exit := make(chan error, 1)
 
+	if manifest.Deploy != nil && manifest.Deploy.Divert != nil && manifest.Deploy.Divert.Namespace != manifest.Namespace {
+		oktetoLog.SetStage("Destroying divert configuration")
+		if err := dc.nsDestroyer.UnconfigureDivert(ctx, manifest); err != nil {
+			oktetoLog.AddToBuffer(oktetoLog.ErrorLevel, "error destroying divert: %s", err.Error())
+			return err
+		}
+		oktetoLog.Success("Divert from '%s' successfully destroyed", manifest.Deploy.Divert.Namespace)
+		oktetoLog.SetStage("")
+	}
+
 	go func() {
 		for _, command := range manifest.Destroy {
 			oktetoLog.Information("Running '%s'", command.Name)
@@ -376,17 +387,6 @@ func (dc *destroyCommand) runDestroy(ctx context.Context, opts *Options) error {
 		}
 		return err
 	}
-
-	// // deploy divert if any
-	// if manifest.Deploy.Divert != nil && manifest.Deploy.Divert.Namespace != manifest.Namespace {
-	// 	oktetoLog.SetStage("Destroying divert configuration")
-	// 	if err := dc.nsDestroyer.DestroyDivert(ctx, manifest.Deploy.Divert)(ctx, opts); err != nil {
-	// 		oktetoLog.AddToBuffer(oktetoLog.ErrorLevel, "error destroying divert: %s", err.Error())
-	// 		return err
-	// 	}
-	// 	oktetoLog.Success("Divert from '%s' successfully destroyed", manifest.Deploy.Divert.Namespace)
-	// 	oktetoLog.SetStage("")
-	// }
 
 	oktetoLog.SetStage("Destroying configmap")
 

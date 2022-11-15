@@ -574,7 +574,7 @@ func (dc *DeployCommand) deployDivert(ctx context.Context, opts *Options) error 
 					continue
 				}
 				oktetoLog.Spinner(fmt.Sprintf("Diverting virtual service %s/%s ...", opts.Manifest.Deploy.Divert.Namespace, vs.Name))
-				if err := diverts.DivertVirtualService(ctx, opts.Manifest, vs, c); err != nil {
+				if err := diverts.ConfigureDivertVirtualService(ctx, opts.Manifest, vs, c); err != nil {
 					return err
 				}
 			}
