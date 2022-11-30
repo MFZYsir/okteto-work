@@ -570,7 +570,7 @@ func (dc *DeployCommand) deployDivert(ctx context.Context, opts *Options) error 
 				oktetoLog.Infof("deployDivert context cancelled")
 				return ctx.Err()
 			default:
-				if !inVirtualService(vs.Name, opts.Manifest.Deploy.Divert.VirtualServices) {
+				if !diverts.InVirtualService(vs.Name, opts.Manifest.Deploy.Divert.VirtualServices) {
 					continue
 				}
 				oktetoLog.Spinner(fmt.Sprintf("Diverting virtual service %s/%s ...", opts.Manifest.Deploy.Divert.Namespace, vs.Name))
@@ -581,18 +581,6 @@ func (dc *DeployCommand) deployDivert(ctx context.Context, opts *Options) error 
 		}
 	}
 	return nil
-}
-
-func inVirtualService(name string, virtualServices []string) bool {
-	for _, vs := range virtualServices {
-		if vs == "*" {
-			return true
-		}
-		if name == vs {
-			return true
-		}
-	}
-	return false
 }
 
 func (dc *DeployCommand) deployEndpoints(ctx context.Context, opts *Options) error {

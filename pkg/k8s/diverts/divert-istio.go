@@ -24,6 +24,19 @@ import (
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
+// InVirtualService checks if a virtual service must be diverted
+func InVirtualService(name string, virtualServices []string) bool {
+	for _, vs := range virtualServices {
+		if vs == "*" {
+			return true
+		}
+		if name == vs {
+			return true
+		}
+	}
+	return false
+}
+
 // ConfigureDivertVirtualService divert a virtual service to the developer namespace
 func ConfigureDivertVirtualService(ctx context.Context, m *model.Manifest, fromVS *istioV1beta1.VirtualService, c *istioclientset.Clientset) error {
 	vs, err := virtualservices.Get(ctx, fromVS.Name, m.Namespace, c)
